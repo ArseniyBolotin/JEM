@@ -170,7 +170,6 @@ def logp_hist(f, args, device):
     import matplotlib.pyplot as plt
     import seaborn as sns
     sns.set()
-    plt.switch_backend('agg')
     def sample(x, n_steps=args.n_steps):
         x_k = t.autograd.Variable(x.clone(), requires_grad=True)
         # sgld
@@ -218,33 +217,31 @@ def logp_hist(f, args, device):
         "cifar10": tv.datasets.CIFAR10(root="../data", transform=transform_test, download=True, train=False),
         "svhn": tv.datasets.SVHN(root="../data", transform=transform_test, download=True, split="test"),
         "cifar100":tv.datasets.CIFAR100(root="../data", transform=transform_test, download=True, train=False),
-        "celeba": tv.datasets.ImageFolder(root="/scratch/gobi1/gwohl/CelebA/splits",
-                                          transform=tr.Compose([tr.Resize(32),
-                                                                tr.ToTensor(),
-                                                                tr.Normalize((.5, .5, .5), (.5, .5, .5)),
-                                                                lambda x: x + args.sigma * t.randn_like(x)]))
     }
 
     score_dict = {}
     for dataset_name in args.datasets:
-        print(dataset_name)
+        # print(dataset_name)
         dataset = datasets[dataset_name]
         dataloader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers=4, drop_last=False)
         this_scores = []
         for x, _ in dataloader:
             x = x.to(device)
             scores = score_fn(x)
-            print(scores.mean())
+            # print(scores.mean())
             this_scores.extend(scores.numpy())
         score_dict[dataset_name] = this_scores
-
+    plt.rcParams["figure.figsize"] = (15,5)
     for name, scores in score_dict.items():
-        plt.hist(scores, label=name, bins=100, normed=True, alpha=.5)
+        plt.hist(scores, label=name, bins=100, density=True, stacked=True, alpha=.5)
     plt.legend()
     plt.savefig(args.save_dir + "/fig.pdf")
-
+    plt.show()
 
 def OODAUC(f, args, device):
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import RocCurveDisplay
+
     print("OOD Evaluation")
 
     def grad_norm(x):
@@ -276,9 +273,9 @@ def OODAUC(f, args, device):
         dset_fake = tv.datasets.CIFAR10(root="../data", transform=transform_test, download=True, train=False)
 
     dload_fake = DataLoader(dset_fake, batch_size=100, shuffle=True, num_workers=4, drop_last=False)
-    print(len(dload_real), len(dload_fake))
+    # print(len(dload_real), len(dload_fake))
     real_scores = []
-    print("Real scores...")
+    # print("Real scores...")
 
     def score_fn(x):
         if args.score_fn == "px":
@@ -292,9 +289,9 @@ def OODAUC(f, args, device):
         x = x.to(device)
         scores = score_fn(x)
         real_scores.append(scores.numpy())
-        print(scores.mean())
+        # print(scores.mean())
     fake_scores = []
-    print("Fake scores...")
+    # print("Fake scores...")
     if args.ood_dataset == "cifar_interp":
         last_batch = None
         for i, (x, _) in enumerate(dload_fake):
@@ -303,14 +300,14 @@ def OODAUC(f, args, device):
                 x_mix = (x + last_batch) / 2 + args.sigma * t.randn_like(x)
                 scores = score_fn(x_mix)
                 fake_scores.append(scores.numpy())
-                print(scores.mean())
+                # print(scores.mean())
             last_batch = x
     else:
         for i, (x, _) in enumerate(dload_fake):
             x = x.to(device)
             scores = score_fn(x)
             fake_scores.append(scores.numpy())
-            print(scores.mean())
+            # print(scores.mean())
     real_scores = np.concatenate(real_scores)
     fake_scores = np.concatenate(fake_scores)
     real_labels = np.ones_like(real_scores)
@@ -319,7 +316,22 @@ def OODAUC(f, args, device):
     scores = np.concatenate([real_scores, fake_scores])
     labels = np.concatenate([real_labels, fake_labels])
     score = sklearn.metrics.roc_auc_score(labels, scores)
+    plt.rcParams["figure.figsize"] = (15,5)
+    RocCurveDisplay.from_predictions(labels, scores)
+    plt.show()
     print(score)
+
+
+def plt_histogram(pys, corrects):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from sklearn.calibration import CalibrationDisplay
+    plt.rcParams["figure.figsize"] = (15,5)
+    y_true = np.array(corrects)
+    y_pred = np.array(pys)
+    CalibrationDisplay.from_predictions(y_true, y_pred)
+    plt.show()
+
 
 
 def test_clf(f, args, device):
@@ -366,7 +378,8 @@ def test_clf(f, args, device):
     loss = np.mean(losses)
     correct = np.mean(corrects)
     t.save({"losses": losses, "corrects": corrects, "pys": pys}, os.path.join(args.save_dir, "vals.pt"))
-    print(loss, correct)
+    print(f'loss : {loss}, accuracy : {correct}')
+    plt_histogram(pys, corrects)
 
 
 def main(args):
